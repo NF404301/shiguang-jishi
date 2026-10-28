@@ -2,7 +2,15 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<meta name="apple-mobile-web-app-title" content="时光记事">
+<meta name="theme-color" content="#d9622b">
 <title>时光记事 · 里程碑与小确幸</title>
 <style>
 :root{--bg:#faf7f2;--card:#fff;--tx:#2b2724;--mu:#8a8178;--ac:#d9622b;--ac2:#fbe9df;--bd:#ece5da;--sh:0 1px 3px rgba(60,40,20,.08);
@@ -50,11 +58,26 @@ textarea{min-height:76px;resize:vertical}
 #msg{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:8px 16px;border-radius:20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}
 #msg.show{opacity:1}
 @media(max-width:480px){.stats{grid-template-columns:repeat(2,1fr)}}
+
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;background:var(--bg)}
+html,body{overscroll-behavior-y:none}
+*{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+button,.chip,.st,.mon,.it h3,header{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,select,textarea{font-size:16px;-webkit-appearance:none;appearance:none}
+select{background-image:none;padding-right:10px}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:8px 0;margin-top:-8px}
+.btn:active,.chip:active,.fab:active{transform:scale(.96);opacity:.85}
+.fab{position:fixed;right:18px;bottom:calc(20px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;border:0;background:var(--ac);color:#fff;font-size:30px;line-height:1;box-shadow:0 4px 14px rgba(0,0,0,.28);z-index:8;cursor:pointer}
+#form{position:fixed;left:0;right:0;bottom:0;z-index:20;margin:0;border-radius:20px 20px 0 0;max-height:90%;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));animation:up .22s ease-out;max-width:760px;margin:0 auto}
+#mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:15}
+#form:not([hidden])+#mask{display:block}
+@keyframes up{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.wrap{padding-bottom:100px}
 </style>
 </head>
 <body>
 <div class="wrap">
-<header><h1>时光记事<small>大事小事，值得记住的都写下来</small></h1><button class="btn p" id="newBtn">＋ 记一笔</button></header>
+<header><h1>时光记事<small>大事小事，值得记住的都写下来</small></h1></header>
 <div class="stats" id="stats"></div>
 <div id="otd"></div>
 
@@ -68,6 +91,7 @@ textarea{min-height:76px;resize:vertical}
  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="cancel">取消</button><button class="btn p" id="save">保存</button></div>
 </div>
 
+<div id="mask"></div>
 <div class="filters">
  <input id="q" placeholder="🔍 搜索标题、内容、标签">
  <select id="fType"></select>
@@ -85,6 +109,7 @@ textarea{min-height:76px;resize:vertical}
  <input type="file" id="file" accept=".json,application/json" hidden>
 </div>
 <div id="msg"></div>
+<button class="fab" id="newBtn" aria-label="记一笔">＋</button>
 </div>
 
 <script>
@@ -99,20 +124,10 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 function toast(t){const m=$("msg");m.textContent=t;m.classList.add("show");setTimeout(()=>m.classList.remove("show"),1800)}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
-/* ---------- 存储：优先云端私有数据，失败则回退到浏览器本地 ---------- */
-async function initStore(){
-  try{
-    const user=await claude.use("user"),db=await claude.use("db");
-    if(user&&db){const id=await user.id();doc=db.collection("data/users/"+id).doc("journal");
-      const s=await doc.get();const v=s&&(s.data?s.data():s);if(v&&Array.isArray(v.entries))entries=v.entries;return}
-  }catch(e){doc=null}
-  try{entries=JSON.parse(localStorage.getItem("journal")||"[]")}catch(e){entries=[]}
-}
+/* ---------- 存储：浏览器本地 ---------- */
+async function initStore(){try{entries=JSON.parse(localStorage.getItem("journal")||"[]")}catch(e){entries=[]}}
 let saveT;
-function persist(){clearTimeout(saveT);saveT=setTimeout(async()=>{
-  if(doc){try{await doc.set({entries});return}catch(e){toast("云端保存失败，已存本地")}}
-  try{localStorage.setItem("journal",JSON.stringify(entries))}catch(e){}
-},300)}
+function persist(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem("journal",JSON.stringify(entries))}catch(e){toast("保存失败：浏览器存储不可用")}},200)}
 
 /* ---------- 表单 ---------- */
 function renderFormChips(){
@@ -125,10 +140,11 @@ function openForm(en){
   editing=en?en.id:null;fType=en?en.type:"small";fMood=en?en.mood||"":"";
   $("fTitle").value=en?en.title:"";$("fDate").value=en?en.date:today();
   $("fNote").value=en?en.note||"":"";$("fTags").value=en?(en.tags||[]).join(" "):"";
-  renderFormChips();$("form").hidden=false;$("fTitle").focus();$("form").scrollIntoView({behavior:"smooth",block:"center"});
+  renderFormChips();$("form").hidden=false;$("form").scrollTop=0;
 }
 $("newBtn").onclick=()=>openForm();
 $("cancel").onclick=()=>{$("form").hidden=true};
+$("mask").onclick=()=>{$("form").hidden=true};
 $("save").onclick=()=>{
   const title=$("fTitle").value.trim();if(!title){toast("先写个标题吧");$("fTitle").focus();return}
   const tags=[...new Set($("fTags").value.split(/[\s,，、#]+/).filter(Boolean))];
@@ -192,8 +208,7 @@ $("star").onclick=()=>{onlyStar=!onlyStar;$("star").style.background=onlyStar?"v
 /* ---------- 备份 / 主题 ---------- */
 $("exp").onclick=async()=>{
   const data=JSON.stringify({version:1,entries},null,1),name="时光记事备份-"+today()+".json";
-  try{const dl=await claude.use("downloads");if(dl){await dl.save({filename:name,data});toast("已导出");return}}catch(e){}
-  try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type:"application/json"}));a.download=name;a.click()}catch(e){}
+  try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type:"application/json"}));a.download=name;a.click();toast("已导出")}catch(e){}
   navigator.clipboard&&navigator.clipboard.writeText(data).then(()=>toast("已复制备份内容到剪贴板")).catch(()=>{});
 };
 $("imp").onclick=()=>$("file").click();
@@ -207,7 +222,11 @@ $("file").onchange=e=>{
 };
 $("theme").onclick=()=>{const r=document.documentElement,dark=r.dataset.theme?r.dataset.theme==="dark":matchMedia("(prefers-color-scheme:dark)").matches;r.dataset.theme=dark?"light":"dark"};
 
+["gesturestart","gesturechange","gestureend"].forEach(t=>document.addEventListener(t,e=>e.preventDefault()));
+document.addEventListener("touchmove",e=>{if(e.touches.length>1||(e.scale&&e.scale!==1))e.preventDefault()},{passive:false});
+let lt=0;document.addEventListener("touchend",e=>{const n=Date.now();if(n-lt<350&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))e.preventDefault();lt=n},{passive:false});
 initStore().then(render);render();
+if("serviceWorker"in navigator)addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 </script>
 </body>
 </html>
